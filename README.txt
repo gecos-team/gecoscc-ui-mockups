@@ -1,5 +1,5 @@
-Gecos Control Center - UI
-=========================
+Gecos Control Center - UI - Mockups
+===================================
 
 
 Copyright © 2013 Junta de Andalucia < http://www.juntadeandalucia.es >
