@@ -1,11 +1,8 @@
-from pyramid.security import remember, forget
 from pyramid.httpexceptions import HTTPFound
 
 from pyramid.view import view_config
 
-from gecoscc.userdb import UserDoesNotExist
-from gecoscc.i18n import _
-from gecoscc.views import BaseView
+from . import BaseView
 
 
 @view_config(route_name='home', renderer='templates/home.jinja2')
@@ -31,48 +28,39 @@ def reports(context, request):
 #;;;;;;;;;;;
 # TO DELETE
 #;;;;;;;;;;;
-@view_config(route_name='users', renderer='templates/to_delete/users.jinja2')
+@view_config(route_name='users', renderer='templates/users.jinja2')
 def users(context, request):
     return {}
 
 
-@view_config(route_name='ous', renderer='templates/to_delete/ous.jinja2')
+@view_config(route_name='ous', renderer='templates/ous.jinja2')
 def ous(context, request):
     return {}
 
 
-@view_config(route_name='policies_wallpaper', renderer='templates/to_delete/policies-wallpaper.jinja2')
+@view_config(route_name='policies_wallpaper', renderer='templates/policies-wallpaper.jinja2')
 def policies_wallpaper(context, request):
     return {}
 
 
-@view_config(route_name='policies_software', renderer='templates/to_delete/policies-software.jinja2')
+@view_config(route_name='policies_software', renderer='templates/policies-software.jinja2')
 def policies_software(context, request):
     return {}
 
 
-@view_config(route_name='policies_storage', renderer='templates/to_delete/policies-storage.jinja2')
+@view_config(route_name='policies_storage', renderer='templates/policies-storage.jinja2')
 def policies_storage(context, request):
     return {}
 
 
-@view_config(route_name='computers', renderer='templates/to_delete/computers.jinja2')
+@view_config(route_name='computers', renderer='templates/computers.jinja2')
 def computers(context, request):
     return {}
 
 
-@view_config(route_name='printers', renderer='templates/to_delete/printers.jinja2')
+@view_config(route_name='printers', renderer='templates/printers.jinja2')
 def printers(context, request):
     return {}
-#;;;;;;;;;;;;;;;
-# END TO DELETE
-#;;;;;;;;;;;;;;;
-
-
-@view_config(route_name='sockjs_home', renderer='templates/sockjs/home.jinja2')
-def sockjs_home(context, request):
-    return {
-    }
 
 
 class LoginViews(BaseView):
@@ -80,35 +68,8 @@ class LoginViews(BaseView):
     @view_config(route_name='login', renderer='templates/login.jinja2')
     def login(self):
         if self.request.POST:
-            username = self.request.POST.get('username')
-            password = self.request.POST.get('password')
-            try:
-                user = self.request.userdb.login(username, password)
-            except UserDoesNotExist:
-                return {
-                    'username': username,
-                    'message': self.translate(
-                        _("The requested username doesn't exists")),
-                }
-
-            if user is False:
-                return {
-                    'username': username,
-                    'message': self.translate(_("The password doesn't match")),
-                }
-
-            headers = remember(self.request, username)
-            self.request.session.flash(self.translate(
-                _('welcome ${username}',
-                  mapping={'username': user['username']})
-            ))
-            return HTTPFound(location=self.request.route_path('home'),
-                             headers=headers)
-        else:
-            return {}
+            return HTTPFound(location=self.request.route_path('home'))
 
     @view_config(route_name='logout')
     def logout(self):
-        headers = forget(self.request)
-        return HTTPFound(location=self.request.route_path('login'),
-                         headers=headers)
+        return HTTPFound(location=self.request.route_path('login'))

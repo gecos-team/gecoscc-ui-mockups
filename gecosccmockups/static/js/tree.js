@@ -1,5 +1,5 @@
 /*jslint browser: true, nomen: true */
-/*global $, App, TreeModel */
+/*global $, App */
 
 /*
 * Fuel UX Tree
@@ -10,40 +10,235 @@
 * Licensed under the MIT license.
 */
 
-// Copyright 2013 Junta de Andalucia
-//
-// Licensed under the EUPL, Version 1.1 or - as soon they
-// will be approved by the European Commission - subsequent
-// versions of the EUPL (the "Licence");
-// You may not use this work except in compliance with the
-// Licence.
-// You may obtain a copy of the Licence at:
-//
-// http://ec.europa.eu/idabc/eupl
-//
-// Unless required by applicable law or agreed to in
-// writing, software distributed under the Licence is
-// distributed on an "AS IS" basis,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
-// express or implied.
-// See the Licence for the specific language governing
-// permissions and limitations under the Licence.
-
 App.module("Tree", function (Tree, App, Backbone, Marionette, $, _) {
     "use strict";
 
-    App.addInitializer(function (options) {
-        App.root = new Tree.Models.TreeData(); // TODO
-        $.ajax("/api/nodes/?maxdepth=1", {
-            success: function (response) {
-                App.root.parseTree(response);
+    // TREE CONSTRUCTOR AND PROTOTYPE
+
+    var TreePlugin = function (element, options) {
+        this.$element = $(element);
+        this.options = $.extend({}, $.fn.tree.defaults, options);
+
+        this.$element.on('click', '.tree-item', $.proxy(function (ev) { this.selectItem(ev.currentTarget); }, this));
+        this.$element.on('click', '.tree-folder-header', $.proxy(function (ev) { this.selectFolder(ev.currentTarget); }, this));
+
+        this.render();
+    };
+
+    TreePlugin.prototype = {
+        constructor: TreePlugin,
+
+        render: function () {
+            this.populate(this.$element);
+        },
+
+        populate: function ($el) {
+            var self = this;
+            var $parent = $el.parent();
+            var loader = $parent.find('.tree-loader:eq(0)');
+
+            loader.show();
+            this.options.dataSource.data($el.data(), function (items) {
+                loader.hide();
+
+                $.each(items.data, function (index, value) {
+                    var $entity;
+
+                    if (value.type === "folder") {
+                        $entity = self.$element.find('.tree-folder:eq(0)').clone().show();
+                        $entity.find('.tree-folder-name').html(value.name);
+                        $entity.find('.tree-loader').html(self.options.loadingHTML);
+                        $entity.find('.tree-folder-header').data(value);
+                    } else if (value.type === "item") {
+                        $entity = self.$element.find('.tree-item:eq(0)').clone().show();
+                        $entity.find('.tree-item-name').html(value.name);
+                        $entity.data(value);
+                    }
+
+                    // Decorate $entity with data making the element
+                    // easily accessable with libraries like jQuery.
+                    //
+                    // Values are contained within the object returned
+                    // for folders and items as dataAttributes:
+                    //
+                    // {
+                    //     name: "An Item",
+                    //     type: 'item',
+                    //     dataAttributes = {
+                    //         'classes': 'required-item red-text',
+                    //         'data-parent': parentId,
+                    //         'guid': guid
+                    //     }
+                    // };
+
+                    var dataAttributes = value.dataAttributes || [];
+                    $.each(dataAttributes, function(key, value) {
+                        switch (key) {
+                        case 'class':
+                        case 'classes':
+                        case 'className':
+                            $entity.addClass(value);
+                            break;
+
+                        // id, style, data-*
+                        default:
+                            $entity.attr(key, value);
+                            break;
+                        }
+                    });
+
+                    if ($el.hasClass('tree-folder-header')) {
+                        $parent.find('.tree-folder-content:eq(0)').append($entity);
+                    } else {
+                        $el.append($entity);
+                    }
+                });
+
+                // return newly populated folder
+                self.$element.trigger('loaded', $parent);
+            });
+        },
+
+        selectItem: function (el) {
+            var $el = $(el);
+            var $all = this.$element.find('.tree-selected');
+            var data = [];
+
+            if (this.options.multiSelect) {
+                $.each($all, function(index, value) {
+                    var $val = $(value);
+                    if ($val[0] !== $el[0]) {
+                        data.push($(value).data());
+                    }
+                });
+            } else if ($all[0] !== $el[0]) {
+                $all.removeClass('tree-selected')
+                    .find('span').removeClass('fa-check').addClass('fa-user');
+                data.push($el.data());
             }
+
+            var eventType = 'selected';
+            if ($el.hasClass('tree-selected')) {
+                eventType = 'unselected';
+                $el.removeClass('tree-selected');
+                $el.find('span').removeClass('fa-check').addClass('fa-user');
+            } else {
+                $el.addClass('tree-selected');
+                $el.find('span').removeClass('fa-user').addClass('fa-check');
+                if (this.options.multiSelect) {
+                    data.push($el.data());
+                }
+            }
+
+            if (data.length) {
+                this.$element.trigger('selected', {info: data});
+            }
+
+            // Return new list of selected items, the item
+            // clicked, and the type of event:
+            $el.trigger('updated', {
+                info: data,
+                item: $el,
+                eventType: eventType
+            });
+        },
+
+        selectFolder: function (el) {
+            var $el = $(el);
+            var $parent = $el.parent();
+            var $treeFolderContent = $parent.find('.tree-folder-content');
+            var $treeFolderContentFirstChild = $treeFolderContent.eq(0);
+
+            var eventType, classToTarget, classToAdd;
+            if ($el.find('.fa-folder').length) {
+                eventType = 'opened';
+                classToTarget = '.fa-folder';
+                classToAdd = 'fa-folder-open';
+
+                $treeFolderContentFirstChild.show();
+                if (!$treeFolderContent.children().length) {
+                    this.populate($el);
+                }
+            } else {
+                eventType = 'closed';
+                classToTarget = '.fa-folder-open';
+                classToAdd = 'fa-folder';
+
+                $treeFolderContentFirstChild.hide();
+                if (!this.options.cacheItems) {
+                    $treeFolderContentFirstChild.empty();
+                }
+            }
+
+            $parent.find(classToTarget).eq(0)
+                .removeClass('fa-folder fa-folder-open')
+                .addClass(classToAdd);
+
+            this.$element.trigger(eventType, $el.data());
+        },
+
+        selectedItems: function () {
+            var $sel = this.$element.find('.tree-selected');
+            var data = [];
+
+            $.each($sel, function (index, value) {
+                data.push($(value).data());
+            });
+            return data;
+        },
+
+        // collapses open folders
+        collapse: function () {
+            var cacheItems = this.options.cacheItems;
+
+            // find open folders
+            this.$element.find('.fa-folder-open').each(function () {
+                // update icon class
+                var $this = $(this)
+                    .removeClass('fa-folder fa-folder-open')
+                    .addClass('fa-folder');
+
+                // "close" or empty folder contents
+                var $parent = $this.parent().parent();
+                var $folder = $parent.children('.tree-folder-content');
+
+                $folder.hide();
+                if (!cacheItems) {
+                    $folder.empty();
+                }
+            });
+        }
+    };
+
+
+    // TREE PLUGIN DEFINITION
+
+    $.fn.tree = function (option, value) {
+        var methodReturn;
+
+        var $set = this.each(function () {
+            var $this = $(this);
+            var data = $this.data('tree');
+            var options = typeof option === 'object' && option;
+
+            if (!data) { $this.data('tree', (data = new TreePlugin(this, options))); }
+            if (typeof option === 'string') { methodReturn = data[option](value); }
         });
-        var treeView = new Tree.Views.NavigationTree({ model: App.root });
-        App.tree.show(treeView);
-        App.root.on("change", function () {
-            App.tree.show(treeView);
-        });
+
+        return (methodReturn === undefined) ? $set : methodReturn;
+    };
+
+    $.fn.tree.defaults = {
+        multiSelect: false,
+        loadingHTML: '<div>Loading...</div>',
+        cacheItems: true
+    };
+
+    $.fn.tree.Constructor = TreePlugin;
+
+    App.addInitializer(function (options) {
+        var model = new Tree.Models.TreeData();
+        App.tree.show(new Tree.Views.NavigationTree({ model: model }));
     });
 });
 
@@ -51,70 +246,13 @@ App.module("Tree.Models", function (Models, App, Backbone, Marionette, $, _) {
     "use strict";
 
     Models.TreeData = Backbone.Model.extend({
-        parser: new TreeModel(),
-
         defaults: {
-            tree: null
-        },
-
-        parseTree: function (data) {
-            var preprocessed = {
-                id: "root",
-                children: []
-            };
-            _.each(data, function (node) {
-                var newnode = _.clone(node),
-                    path = node.path.split(','),
-                    aux;
-
-                newnode.id = newnode._id;
-                delete newnode._id;
-                newnode.loaded = true;
-
-                aux = preprocessed.children;
-                _.each(path, function (step) {
-                    if (step === "root") { return; }
-                    var obj = _.find(aux, function (child) {
-                        return child.id === step;
-                    });
-                    if (!obj) {
-                        // This path step is not present, lets create the
-                        // container
-                        obj = {
-                            id: step,
-                            type: "ou",
-                            name: "unknown",
-                            loaded: false,
-                            children: []
-                        };
-                        aux.push(obj);
-                    }
-                    aux = obj.children;
-                });
-
-                // We have arrived to the parent of the newnode (aux),
-                // newnode may be already present if it was created as a
-                // container
-                node = _.find(aux, function (obj) {
-                    return obj.id === newnode.id;
-                });
-                if (node) {
-                    _.defaults(node, newnode);
-                } else {
-                    newnode.children = [];
-                    aux.push(newnode);
-                }
-            });
-
-            this.set("tree", this.parser.parse(preprocessed));
+            rawData: null,
+            parsedData: null
         },
 
         toJSON: function () {
-            var tree = this.get("tree");
-            if (tree) {
-                return _.clone(tree.model.children[0]);
-            }
-            return {};
+            return _.clone(this.get("parsedData"));
         }
     });
 });
@@ -122,113 +260,10 @@ App.module("Tree.Models", function (Models, App, Backbone, Marionette, $, _) {
 App.module("Tree.Views", function (Views, App, Backbone, Marionette, $, _) {
     "use strict";
 
-    var treeContainerPre =
-            '<div class="tree-folder" style="display: block;" id="<%= id %>">\n' +
-            '    <div class="tree-folder-header">\n' +
-            '        <span class="fa fa-<%= controlIcon %>-square-o"></span> ' +
-            '        <span class="fa fa-group"></span>\n' +
-            '        <div class="tree-folder-name"><%= name %></div>\n' +
-            '    </div>\n' +
-            '    <div class="tree-folder-content">\n',
-        treeContainerPost =
-            '    </div>\n' +
-            '    <div class="tree-loader" style="display: none;">\n' +
-            '        <div class="static-loader">Loading...</div>\n' +
-            '    </div>\n' +
-            '</div>',
-        treeItem =
-            '<div class="tree-item" style="display: block;" id="<%= id %>">' +
-            '    <span class="fa fa-<%= icon %>"></span>' +
-            '    <div class="tree-item-name"><%= name %></div>' +
-            '</div>';
-
     Views.NavigationTree = Marionette.ItemView.extend({
-        templates: {
-            containerPre: _.template(treeContainerPre),
-            containerPost: _.template(treeContainerPost),
-            item: _.template(treeItem)
-        },
+        tagName: "div",
+        template: "#tpl-nav-tree"
 
-        iconClasses: {
-            user: "user",
-            computer: "desktop",
-            printer: "printer"
-        },
-
-        events: {
-            "click .tree-folder-header": "selectContainer",
-            "click .tree-item": "selectItem"
-        },
-
-        render: function () {
-            var tree = this.model.toJSON(),
-                html;
-
-            if (_.keys(tree).length > 0) {
-                html = this.recursiveRender(tree);
-            } else {
-                html = "<p><span class='fa fa-spinner fa-spin'></span> Loading...</p>";
-            }
-            this.$el.html(html);
-            return this;
-        },
-
-        recursiveRender: function (node) {
-            var that = this,
-                json = _.pick(node, "name", "type", "id"),
-                html;
-
-            if (json.type === "ou") {
-                json.controlIcon = "plus";
-                if (node.loaded && node.children.length > 0) {
-                    json.controlIcon = "minus";
-                }
-                html = this.templates.containerPre(json);
-                _.each(node.children, function (child) {
-                    html += that.recursiveRender(child);
-                });
-                html += this.templates.containerPost(json);
-            } else {
-                json.icon = this.iconClasses[json.type];
-                html = this.templates.item(json);
-            }
-
-            return html;
-        },
-
-        selectContainer: function (evt) {
-            var $el = $(evt.target).parents(".tree-folder").first(),
-                $treeFolderContent = $el.find('.tree-folder-content').first(),
-                classToTarget,
-                classToAdd;
-
-            if ($el.find('.tree-folder-header').first().find('.fa-minus-square-o').length > 0) {
-                classToTarget = '.fa-minus-square-o';
-                classToAdd = 'fa-plus-square-o';
-                $treeFolderContent.hide();
-            } else {
-                classToTarget = '.fa-plus-square-o';
-                classToAdd = 'fa-minus-square-o';
-                $treeFolderContent.show();
-            }
-
-            $el.find(classToTarget).first()
-                .removeClass('fa-plus-square-o fa-minus-square-o')
-                .addClass(classToAdd);
-        },
-
-        selectItem: function (evt) {
-            var $el = $(evt.target).parents(".tree-item").first(),
-                id = $el.attr("id"),
-                item;
-
-            item = this.model.get("tree").first(function (node) {
-                return node.model.id === id;
-            });
-
-            if (item && item.model.type === "user") {
-                window.location = "/users/";
-            }
-        }
+//         events: {},
     });
 });

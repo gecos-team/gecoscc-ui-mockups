@@ -40,8 +40,6 @@ setup(name='gecoscc-mockups',
       entry_points="""\
       [paste.app_factory]
       main = gecosccmockups:main
-      [console_scripts]
-      pmanage = gecosccmockups.management:main
       """,
       paster_plugins=['pyramid'],
       )

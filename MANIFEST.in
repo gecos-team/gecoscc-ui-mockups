@@ -1,4 +1,4 @@
 include *.txt *.ini *.cfg *.rst *.pdf
-recursive-include gecoscc/locale  *.mo *.pot *.po
-recursive-include gecoscc/templates *
-recursive-include gecoscc/static *
+recursive-include gecosccmockups/locale  *.mo *.pot *.po
+recursive-include gecosccmockups/templates *
+recursive-include gecosccmockups/static *
